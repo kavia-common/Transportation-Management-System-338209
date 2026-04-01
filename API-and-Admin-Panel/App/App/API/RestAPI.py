@@ -6,6 +6,8 @@ import os
 import calendar
 import datetime
 import json
+from typing import Any, Dict, List, Optional, Tuple
+
 import requests
 from flask import Blueprint, jsonify, make_response, request
 from flask import current_app as app
@@ -836,6 +838,248 @@ def monthReceipts(month):
         return "No data for this month"
     result = cur.fetchone()
     return result[0]
+
+
+# -------------------------------------------------------------------
+# Admin panel helper endpoints (used by AdminPanel/static/scripts/panel.js)
+# -------------------------------------------------------------------
+
+_ALLOWED_JOB_STATUSES: Tuple[str, ...] = (
+    "Pending",
+    "Assigned",
+    "PickedUp",
+    "InTransit",
+    "Delivered",
+    "Cancelled",
+)
+
+
+def _coerce_none(value: Optional[str]) -> Optional[str]:
+    """Convert legacy 'None' string from the UI into real None."""
+    if value is None:
+        return None
+    return None if value == "None" else value
+
+
+def _today_range() -> Tuple[datetime.datetime, datetime.datetime]:
+    """Return (start,end) datetimes for today in server local time."""
+    now = datetime.datetime.now()
+    start = datetime.datetime(now.year, now.month, now.day, 0, 0, 0)
+    end = start + datetime.timedelta(days=1)
+    return start, end
+
+
+# PUBLIC_INTERFACE
+def assign_job_flow(*, job_id: int, driver_id: Optional[int], vehicle_id: Optional[int]) -> Dict[str, Any]:
+    """
+    Assign a job to a driver/vehicle in a single canonical flow.
+
+    Contract:
+      - Inputs:
+          - job_id: existing JobID
+          - driver_id: DriverID or None (unassign)
+          - vehicle_id: VehicleID or None (unassign)
+      - Output:
+          - dict with keys: JobID, DriverID, VehicleID, Status
+      - Errors:
+          - ValidationError on invalid IDs
+          - ApiError(404) if job not found
+      - Side effects:
+          - Updates Jobs table (DriverID/VehicleID and potentially Status)
+    """
+    conn = mysql.connection
+    cur = conn.cursor()
+
+    cur.execute("SELECT JobID, Status FROM Jobs WHERE JobID=%s", (job_id,))
+    if cur.rowcount == 0:
+        raise ApiError("No matching ID found in database.", status_code=404)
+    current_status = cur.fetchone()[1]
+
+    if driver_id is not None:
+        cur.execute("SELECT 1 FROM Drivers WHERE DriverID=%s", (driver_id,))
+        if cur.rowcount == 0:
+            raise ValidationError("Invalid DriverID: no matching driver")
+    if vehicle_id is not None:
+        cur.execute("SELECT 1 FROM Vehicles WHERE VehicleID=%s", (vehicle_id,))
+        if cur.rowcount == 0:
+            raise ValidationError("Invalid VehicleID: no matching vehicle")
+
+    # Status adjustment rules (kept minimal to avoid breaking legacy behavior)
+    next_status = current_status
+    if current_status not in ("Delivered", "Cancelled"):
+        if driver_id is not None or vehicle_id is not None:
+            if current_status == "Pending":
+                next_status = "Assigned"
+        else:
+            if current_status == "Assigned":
+                next_status = "Pending"
+
+    cur.execute(
+        "UPDATE Jobs SET DriverID=%s, VehicleID=%s, Status=%s WHERE JobID=%s",
+        (driver_id, vehicle_id, next_status, job_id),
+    )
+    conn.commit()
+
+    return {"JobID": job_id, "DriverID": driver_id, "VehicleID": vehicle_id, "Status": next_status}
+
+
+# PUBLIC_INTERFACE
+def update_job_status_flow(*, job_id: int, status: str) -> Dict[str, Any]:
+    """
+    Update a job status with validation and automatic timestamp updates.
+
+    Contract:
+      - Inputs:
+          - job_id: existing JobID
+          - status: one of _ALLOWED_JOB_STATUSES
+      - Output:
+          - dict with keys: JobID, Status, DateDelivered (optional)
+      - Errors:
+          - ValidationError for invalid status
+          - ApiError(404) if job not found
+      - Side effects:
+          - Updates Jobs.Status and sets DateDelivered when Delivered
+    """
+    if status not in _ALLOWED_JOB_STATUSES:
+        raise ValidationError(f"Invalid Status. Allowed: {', '.join(_ALLOWED_JOB_STATUSES)}")
+
+    conn = mysql.connection
+    cur = conn.cursor()
+    cur.execute("SELECT JobID FROM Jobs WHERE JobID=%s", (job_id,))
+    if cur.rowcount == 0:
+        raise ApiError("No matching ID found in database.", status_code=404)
+
+    if status == "Delivered":
+        cur.execute("UPDATE Jobs SET Status=%s, DateDelivered=NOW() WHERE JobID=%s", (status, job_id))
+    else:
+        cur.execute("UPDATE Jobs SET Status=%s WHERE JobID=%s", (status, job_id))
+    conn.commit()
+
+    payload: Dict[str, Any] = {"JobID": job_id, "Status": status}
+    if status == "Delivered":
+        payload["DateDelivered"] = str(datetime.datetime.now())
+    return payload
+
+
+# PUBLIC_INTERFACE
+def dashboard_kpis_flow() -> Dict[str, Any]:
+    """
+    Compute dashboard KPIs and chart datasets for the admin panel.
+
+    Contract:
+      - Inputs: none
+      - Output:
+          - kpis: parcels_today, drivers_connected_today, jobs_completed_today, jobs_total_today, completed_percent
+          - work_share: list of driver workload entries
+      - Errors: DB errors propagate to route handler
+      - Side effects: none
+    """
+    conn = mysql.connection
+    cur = conn.cursor()
+
+    start, end = _today_range()
+
+    cur.execute("SELECT COUNT(*) FROM Jobs WHERE DateCreated >= %s AND DateCreated < %s", (start, end))
+    parcels_today = int(cur.fetchone()[0] or 0)
+
+    cur.execute("SELECT COUNT(*) FROM Jobs WHERE DateDelivered IS NOT NULL AND DateDelivered >= %s AND DateDelivered < %s", (start, end))
+    jobs_completed_today = int(cur.fetchone()[0] or 0)
+
+    jobs_total_today = parcels_today
+    completed_percent = int(round((jobs_completed_today / jobs_total_today) * 100)) if jobs_total_today > 0 else 0
+
+    cur.execute("SELECT COUNT(*) FROM Drivers WHERE LastConnected IS NOT NULL AND LastConnected >= %s AND LastConnected < %s", (start, end))
+    drivers_connected_today = int(cur.fetchone()[0] or 0)
+
+    cur.execute(
+        "SELECT d.DriverID, d.FirstName, d.LastName, COUNT(j.JobID) "
+        "FROM Drivers d "
+        "LEFT JOIN Jobs j ON j.DriverID = d.DriverID AND j.Status IN ('Pending','Assigned','PickedUp','InTransit') "
+        "GROUP BY d.DriverID, d.FirstName, d.LastName "
+        "ORDER BY COUNT(j.JobID) DESC"
+    )
+    share_rows = cur.fetchall()
+    work_share: List[Dict[str, Any]] = []
+    for row in share_rows:
+        driver_id, first_name, last_name, count_jobs = row
+        driver_name = (first_name or "").strip()
+        if last_name:
+            driver_name = (driver_name + " " + last_name).strip()
+        if not driver_name:
+            driver_name = f"Driver {driver_id}"
+        work_share.append({"DriverID": driver_id, "DriverName": driver_name, "Jobs": int(count_jobs or 0)})
+
+    return {
+        "kpis": {
+            "parcels_today": parcels_today,
+            "drivers_connected_today": drivers_connected_today,
+            "jobs_completed_today": jobs_completed_today,
+            "jobs_total_today": jobs_total_today,
+            "completed_percent": completed_percent,
+        },
+        "work_share": work_share,
+    }
+
+
+@rest_api.route("/jobs/<int:id>/assign", methods=["PUT"])
+def assign_job(id: int):
+    """
+    Assign/unassign a driver and/or vehicle to a job.
+
+    Query args:
+      - DriverID: integer or 'None'
+      - VehicleID: integer or 'None'
+    """
+    try:
+        driver_raw = _coerce_none(request.args.get("DriverID"))
+        vehicle_raw = _coerce_none(request.args.get("VehicleID"))
+
+        driver_id: Optional[int] = int(driver_raw) if driver_raw is not None else None
+        vehicle_id: Optional[int] = int(vehicle_raw) if vehicle_raw is not None else None
+
+        job = assign_job_flow(job_id=id, driver_id=driver_id, vehicle_id=vehicle_id)
+        return json_response([{"Success": "Job assignment updated successfully!", "Job": job}], status_code=200)
+    except (ValueError, TypeError):
+        return legacy_list_error("DriverID/VehicleID must be integers or None", 400)
+    except ValidationError as e:
+        return legacy_list_error(e.message, 400)
+    except ApiError as e:
+        return legacy_list_error(e.message, e.status_code)
+    except Exception as e:
+        log_exception("assign_job", e, extra={"JobID": id, "args": dict(request.args)})
+        return legacy_list_error("Internal Server Error", 500)
+
+
+@rest_api.route("/jobs/<int:id>/status", methods=["PUT"])
+def update_job_status(id: int):
+    """
+    Update job lifecycle status.
+
+    Query args:
+      - Status: one of Pending/Assigned/PickedUp/InTransit/Delivered/Cancelled
+    """
+    try:
+        status = request.args.get("Status", "")
+        result = update_job_status_flow(job_id=id, status=status)
+        return json_response([{"Success": "Job status updated successfully!", "Job": result}], status_code=200)
+    except ValidationError as e:
+        return legacy_list_error(e.message, 400)
+    except ApiError as e:
+        return legacy_list_error(e.message, e.status_code)
+    except Exception as e:
+        log_exception("update_job_status", e, extra={"JobID": id, "args": dict(request.args)})
+        return legacy_list_error("Internal Server Error", 500)
+
+
+@rest_api.route("/dashboard/kpis", methods=["GET"])
+def dashboard_kpis():
+    """Return KPI + chart datasets for the admin dashboard."""
+    try:
+        payload = dashboard_kpis_flow()
+        return json_response(payload, status_code=200)
+    except Exception as e:
+        log_exception("dashboard_kpis", e)
+        return legacy_list_error("Internal Server Error", 500)
 
 
 # -------------------------------------------------------------------

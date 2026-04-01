@@ -44,8 +44,8 @@
       <hr class="sidebar-divider my-0">
 
       <!-- Nav Item - Dashboard -->
-      <li style="cursor:pointer;" class="nav-item active">
-        <a class="nav-link" href="main">
+      <li id="nav-dashboard" style="cursor:pointer;" class="nav-item active" onclick="loadDashboard();">
+        <a class="nav-link">
           <i class="fas fa-fw fa-tachometer-alt"></i>
           <span>Dashboard</span></a>
       </li>
@@ -178,7 +178,7 @@
                   <div class="row no-gutters align-items-center">
                     <div class="col mr-2">
                       <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Parcels Today</div>
-                      <div class="h5 mb-0 font-weight-bold text-gray-800">341</div>
+                      <div id="kpiParcelsToday" class="h5 mb-0 font-weight-bold text-gray-800">-</div>
                     </div>
                     <div class="col-auto">
                       <i class="fas fa-boxes fa-2x text-gray-300"></i>
@@ -195,7 +195,7 @@
                   <div class="row no-gutters align-items-center">
                     <div class="col mr-2">
                       <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Drivers Today</div>
-                      <div class="h5 mb-0 font-weight-bold text-gray-800">3</div>
+                      <div id="kpiDriversToday" class="h5 mb-0 font-weight-bold text-gray-800">-</div>
                     </div>
                     <div class="col-auto">
                       <i class="fas fa-truck fa-2x text-gray-300"></i>
@@ -214,11 +214,11 @@
                       <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Completed</div>
                       <div class="row no-gutters align-items-center">
                         <div class="col-auto">
-                          <div class="h5 mb-0 mr-3 font-weight-bold text-gray-800">50%</div>
+                          <div id="kpiCompletedPercent" class="h5 mb-0 mr-3 font-weight-bold text-gray-800">-%</div>
                         </div>
                         <div class="col">
                           <div class="progress progress-sm mr-2">
-                            <div class="progress-bar bg-info" role="progressbar" style="width: 50%" aria-valuenow="50" aria-valuemin="0" aria-valuemax="100"></div>
+                            <div id="kpiCompletedBar" class="progress-bar bg-info" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
                           </div>
                         </div>
                       </div>
@@ -350,11 +350,12 @@
   <!-- Page level plugins -->
   <script src="./static/scripts/vendor/chart.js/Chart.min.js"></script>
 
-  <!-- Page level custom scripts -->
-  <script src="./static/scripts/demo/chart-bar-demo.js"></script>
-  <script src="./static/scripts/demo/chart-pie-demo.js"></script>
-
   <script type="text/javascript" src="./static/scripts/panel.js"></script>
+  <script type="text/javascript">
+    $(document).ready(function() {
+      if (typeof loadDashboard === "function") { loadDashboard(); }
+    });
+  </script>
 
 </body>
 
