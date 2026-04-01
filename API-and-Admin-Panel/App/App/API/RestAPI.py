@@ -1,8 +1,5 @@
-import sys
 import os
-
-[sys.path.append('/var/www/html/env/App/App')]
-
+import sys
 import calendar
 import datetime
 import json
@@ -14,7 +11,7 @@ from flask import current_app as app
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
-from extensions import mysql
+from ..extensions import mysql
 
 from .api_utils import (
     ApiError,
