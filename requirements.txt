@@ -1,0 +1,17 @@
+# Transportation Management System - Python dependencies
+# This file lists only packages that can be installed in the preview environment.
+# C-library-dependent packages (mysqlclient, mod-wsgi) are excluded in favor of
+# pure-Python alternatives (PyMySQL).
+
+Flask==2.2.5
+Flask-Cors==5.0.0
+Flask-Login==0.5.0
+Flask-WTF==1.2.2
+Jinja2==3.1.5
+MarkupSafe>=1.1.1
+Click>=7.0
+itsdangerous>=1.1.0
+Werkzeug>=2.2.0,<4.0
+PyMySQL==1.1.1
+requests>=2.20.0
+WTForms>=2.2.1
