@@ -9,6 +9,16 @@ This project is a full-suite for a delivery company. It includes:
  - Drivers App: android application that allows drivers to see the jobs and vehicle assigned to them, mark jobs as completed, request for a customer signature, upload receipts and parcel pictures to the server, etc.
  - API: the pivotal element that connects and makes the three above services work
 
+### Database (MySQL) setup
+
+A reproducible MySQL schema (DDL) is included in:
+
+- `API-and-Admin-Panel/App/db/schema.mysql.sql`
+
+Setup instructions are documented here:
+
+- `API-and-Admin-Panel/App/db/README.md`
+
 ### 0. Web Server
 
 The web server uses *Python FLASK*. The API, Admin Panel and Customer's Website are therefore flask applications.  
