@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>Aquarian Logistics — Track a Parcel</title>
+
+    <!-- Theme CSS - Includes Bootstrap -->
+    <link href="./static/css/creative.min.css" rel="stylesheet" />
+
+    <style>
+      .track-wrap {
+        min-height: 80vh;
+        display: flex;
+        align-items: center;
+      }
+      .track-card {
+        width: 100%;
+        max-width: 760px;
+        margin: 0 auto;
+        background: #ffffff;
+        border-radius: 0.5rem;
+        box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.08);
+        padding: 2rem;
+      }
+      .muted {
+        color: #6c757d;
+      }
+    </style>
+  </head>
+
+  <body id="page-top">
+    <!-- Simple public nav (kept isolated from /admin) -->
+    <nav class="navbar navbar-expand-lg navbar-light fixed-top py-3" id="mainNav">
+      <div class="container">
+        <a class="navbar-brand" href="/home">Aquarian Logistics</a>
+        <div class="collapse navbar-collapse show" id="navbarResponsive">
+          <ul class="navbar-nav ml-auto my-2 my-lg-0">
+            <li class="nav-item">
+              <a class="nav-link" href="/home">Home</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link active" href="/home/track">Track</a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <header class="masthead" style="padding-top: 7rem; padding-bottom: 3rem;">
+      <div class="container text-center">
+        <h1 class="text-uppercase text-white font-weight-bold">Track your parcel</h1>
+        <hr class="divider my-4" />
+        <p class="text-white-75 font-weight-light mb-0">Enter your tracking number to see the latest driver location.</p>
+      </div>
+    </header>
+
+    <section class="page-section bg-light">
+      <div class="container track-wrap">
+        <div class="track-card">
+          <h2 class="h4 mb-3">Tracking</h2>
+          <p class="muted mb-4">
+            This page uses the existing tracking API endpoint:
+            <code>/api/jobs/&lt;trackingId&gt;/location</code>
+          </p>
+
+          <form method="POST" action="/home/track/result">
+            <div class="form-group">
+              <label for="tracking_id">Tracking number</label>
+              <input
+                id="tracking_id"
+                name="tracking_id"
+                class="form-control"
+                type="text"
+                placeholder="e.g. AQ0426123"
+                value="{{ tracking_id or '' }}"
+                required
+              />
+            </div>
+            <button class="btn btn-primary btn-xl" type="submit">Track</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <footer class="bg-light py-4">
+      <div class="container">
+        <div class="small text-center text-muted">© Aquarian Logistics</div>
+      </div>
+    </footer>
+
+    <!-- Bootstrap core JavaScript -->
+    <script src="./static/vendor/jquery/jquery.min.js"></script>
+    <script src="./static/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <script src="./static/vendor/jquery-easing/jquery.easing.min.js"></script>
+    <script src="./static/js/creative.min.js"></script>
+  </body>
+</html>
