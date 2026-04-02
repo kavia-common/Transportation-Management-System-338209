@@ -14,10 +14,14 @@ import os
 
 from flask import Flask, redirect
 
-# Ensure the app directory is in the path for imports
+# Ensure the package parent directory is in the path for imports.
+# When App.py is run as a script, adding the package directory itself would
+# shadow the App package with this module (App.py). The parent directory
+# makes App/ a proper importable package.
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-if APP_DIR not in sys.path:
-    sys.path.insert(0, APP_DIR)
+APP_PARENT = os.path.dirname(APP_DIR)
+if APP_PARENT not in sys.path:
+    sys.path.insert(0, APP_PARENT)
 
 from dotenv import load_dotenv
 load_dotenv()
