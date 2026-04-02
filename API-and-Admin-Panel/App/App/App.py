@@ -48,7 +48,14 @@ APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(APP_ROOT, 'AdminPanel/static/images/receipts')
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-mysql.init_app(app)
+# Initializing the Flask-MySQL extension should not hard-fail app startup.
+# This allows non-DB routes (redirects/landing) to work even if MySQL is down.
+try:
+    mysql.init_app(app)
+except Exception as e:
+    # Keep behavior minimal: log and continue. Routes that require DB will still
+    # fail at request-time when they attempt to use the connection.
+    print(f"[WARN] MySQL init failed; continuing without DB connectivity: {e}")
 
 # Register blueprints for each portal
 app.register_blueprint(landing, url_prefix='/home')
