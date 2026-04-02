@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title>Driver Login - Aquarian Logistics</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <link href="https://fonts.googleapis.com/css?family=Nunito:400,600,700" rel="stylesheet">
+    <style>
+        :root { --input-padding-x: 1.5rem; --input-padding-y: .75rem; }
+        body { background-color: #2c3e50; font-family: 'Nunito', sans-serif; }
+        .card-signin { border: 0; border-radius: 1rem; box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.1); }
+        .card-signin .card-title { margin-bottom: 2rem; font-weight: 300; font-size: 1.5rem; color: #2c3e50; }
+        .card-signin .card-body { padding: 2rem; }
+        .form-signin .btn { font-size: 80%; border-radius: 5rem; letter-spacing: .1rem; font-weight: bold; padding: 1rem; background-color: #2c3e50; border: none; }
+        .form-signin .btn:hover { background-color: #f39c12; }
+        .form-label-group { position: relative; margin-bottom: 1rem; }
+        .form-label-group input { height: auto; border-radius: 2rem; padding: var(--input-padding-y) var(--input-padding-x); }
+        .portal-icon { font-size: 4rem; color: white; text-align: center; margin-top: 60px; margin-bottom: 20px; }
+        .portal-title { color: white; text-align: center; margin-bottom: 30px; font-size: 1.5rem; }
+    </style>
+</head>
+<body>
+    <div class="portal-icon">🚚</div>
+    <div class="portal-title">Driver Portal</div>
+    <div class="container">
+        <div class="row">
+            <div class="col-sm-9 col-md-7 col-lg-5 mx-auto">
+                <div class="card card-signin my-3">
+                    <div class="card-body">
+                        <h5 class="card-title text-center"><strong>Aquarian Logistics</strong></h5>
+                        <form class="form-signin" action="" method="post">
+                            <div class="form-label-group">
+                                <input type="text" id="inputUsername" name="username" class="form-control" placeholder="Username" required autofocus>
+                            </div>
+                            <div class="form-label-group">
+                                <input type="password" id="inputPassword" name="password" class="form-control" placeholder="Password" required>
+                            </div>
+                            <div class="custom-control custom-checkbox mb-3">
+                                <label style="color:red;">{{ error_message }}</label>
+                            </div>
+                            <input class="btn btn-lg btn-primary btn-block text-uppercase" type="submit" value="Sign In">
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

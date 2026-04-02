@@ -24,7 +24,7 @@ function getLocation() {
     }
     else {
       var trackID = x;  
-      var trackData = "http://soc-web-liv-82.napier.ac.uk/api/jobs/"+ trackID +"/location";      
+      var trackData = "/api/jobs/" + trackID + "/location";      
       var trackingLocation = getLocationVars(trackData);
     }
   }
@@ -51,7 +51,7 @@ function getLocation() {
     var map = new google.maps.Map(document.getElementById("googleMap"),mapProp);
     var marker = new google.maps.Marker({
       position: myLatLng,
-      icon: 'http://soc-web-liv-82.napier.ac.uk/home/static/img/truck.png',
+      icon: '/home/static/img/truck.png', // or update to '/static/img/truck.png' if the asset is in Website/static/img 
       map: map
     });
   }

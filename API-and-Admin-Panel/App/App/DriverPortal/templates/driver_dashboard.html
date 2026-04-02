@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title>Driver Dashboard - Aquarian Logistics</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Nunito:400,600,700" rel="stylesheet">
+    <style>
+        body { font-family: 'Nunito', sans-serif; background-color: #f8f9fc; }
+        .sidebar { background: linear-gradient(180deg, #2c3e50 10%, #34495e 100%); min-height: 100vh; color: white; }
+        .sidebar a { color: rgba(255,255,255,0.8); text-decoration: none; display: block; padding: 12px 20px; }
+        .sidebar a:hover, .sidebar a.active { color: white; background-color: rgba(255,255,255,0.1); }
+        .sidebar .brand { padding: 20px; font-size: 1.2rem; font-weight: 700; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.15); }
+        .card-kpi { border-left: 4px solid; border-radius: 0.35rem; }
+        .kpi-primary { border-left-color: #4e73df; }
+        .kpi-success { border-left-color: #1cc88a; }
+        .kpi-warning { border-left-color: #f6c23e; }
+        .topbar { background: white; padding: 15px 20px; box-shadow: 0 0.15rem 1.75rem rgba(0,0,0,0.05); margin-bottom: 24px; }
+        .table th { font-size: 0.85rem; text-transform: uppercase; color: #858796; }
+        .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
+        .status-pending { background-color: #fff3cd; color: #856404; }
+        .status-delivered { background-color: #d4edda; color: #155724; }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-2 sidebar p-0">
+                <div class="brand"><i class="fas fa-truck"></i> Driver Portal</div>
+                <a href="/driver/dashboard" class="active"><i class="fas fa-tachometer-alt mr-2"></i>Dashboard</a>
+                <a href="/driver/logout"><i class="fas fa-sign-out-alt mr-2"></i>Logout</a>
+            </div>
+            <!-- Main Content -->
+            <div class="col-md-10 p-0">
+                <div class="topbar d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0">Dashboard</h4>
+                    <span class="text-muted"><i class="fas fa-user mr-1"></i>{{ driver_name }}</span>
+                </div>
+                <div class="px-4">
+                    <!-- KPI Cards -->
+                    <div class="row mb-4">
+                        <div class="col-xl-4 col-md-6 mb-3">
+                            <div class="card card-kpi kpi-primary shadow-sm py-2">
+                                <div class="card-body">
+                                    <div class="row no-gutters align-items-center">
+                                        <div class="col mr-2">
+                                            <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Pending Jobs</div>
+                                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ pending_count }}</div>
+                                        </div>
+                                        <div class="col-auto"><i class="fas fa-box fa-2x text-gray-300"></i></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-xl-4 col-md-6 mb-3">
+                            <div class="card card-kpi kpi-success shadow-sm py-2">
+                                <div class="card-body">
+                                    <div class="row no-gutters align-items-center">
+                                        <div class="col mr-2">
+                                            <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Delivered Today</div>
+                                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ delivered_today }}</div>
+                                        </div>
+                                        <div class="col-auto"><i class="fas fa-check-circle fa-2x text-gray-300"></i></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pending Jobs Table -->
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header py-3">
+                            <h6 class="m-0 font-weight-bold text-primary">Assigned Jobs</h6>
+                        </div>
+                        <div class="card-body">
+                            {% if pending_jobs|length > 0 %}
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Job ID</th>
+                                            <th>Tracking ID</th>
+                                            <th>Parcel Type</th>
+                                            <th>Parcel Size</th>
+                                            <th>Due Date</th>
+                                            <th>Status</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for job in pending_jobs %}
+                                        <tr>
+                                            <td>{{ job.JobID }}</td>
+                                            <td>{{ job.TrackingID or '' }}</td>
+                                            <td>{{ job.ParcelType or '' }}</td>
+                                            <td>{{ job.ParcelSize or '' }}</td>
+                                            <td>{{ job.DateDue or '' }}</td>
+                                            <td><span class="status-badge status-pending">{{ job.Status }}</span></td>
+                                            <td><a href="/driver/job/{{ job.JobID }}" class="btn btn-sm btn-primary">View</a></td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <p class="text-muted mb-0">No pending jobs assigned to you.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

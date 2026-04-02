@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title>Customer Dashboard - Aquarian Logistics</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Nunito:400,600,700" rel="stylesheet">
+    <style>
+        body { font-family: 'Nunito', sans-serif; background-color: #f8f9fc; }
+        .sidebar { background: linear-gradient(180deg, #1a5276 10%, #21618c 100%); min-height: 100vh; color: white; }
+        .sidebar a { color: rgba(255,255,255,0.8); text-decoration: none; display: block; padding: 12px 20px; }
+        .sidebar a:hover, .sidebar a.active { color: white; background-color: rgba(255,255,255,0.1); }
+        .sidebar .brand { padding: 20px; font-size: 1.2rem; font-weight: 700; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.15); }
+        .card-kpi { border-left: 4px solid; border-radius: 0.35rem; }
+        .kpi-primary { border-left-color: #4e73df; }
+        .kpi-success { border-left-color: #1cc88a; }
+        .kpi-warning { border-left-color: #f6c23e; }
+        .topbar { background: white; padding: 15px 20px; box-shadow: 0 0.15rem 1.75rem rgba(0,0,0,0.05); margin-bottom: 24px; }
+        .table th { font-size: 0.85rem; text-transform: uppercase; color: #858796; }
+        .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
+        .status-pending { background-color: #fff3cd; color: #856404; }
+        .status-delivered { background-color: #d4edda; color: #155724; }
+        .status-transit { background-color: #cce5ff; color: #004085; }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-2 sidebar p-0">
+                <div class="brand"><i class="fas fa-box"></i> Customer Portal</div>
+                <a href="/customer/dashboard" class="active"><i class="fas fa-tachometer-alt mr-2"></i>Dashboard</a>
+                <a href="/customer/track"><i class="fas fa-search-location mr-2"></i>Track Parcel</a>
+                <a href="/customer/logout"><i class="fas fa-sign-out-alt mr-2"></i>Logout</a>
+            </div>
+            <!-- Main Content -->
+            <div class="col-md-10 p-0">
+                <div class="topbar d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0">My Orders</h4>
+                    <span class="text-muted"><i class="fas fa-user mr-1"></i>{{ customer_name }}</span>
+                </div>
+                <div class="px-4">
+                    <!-- KPI Cards -->
+                    <div class="row mb-4">
+                        <div class="col-xl-4 col-md-6 mb-3">
+                            <div class="card card-kpi kpi-primary shadow-sm py-2">
+                                <div class="card-body">
+                                    <div class="row no-gutters align-items-center">
+                                        <div class="col mr-2">
+                                            <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Total Orders</div>
+                                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ total_orders }}</div>
+                                        </div>
+                                        <div class="col-auto"><i class="fas fa-boxes fa-2x text-gray-300"></i></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-xl-4 col-md-6 mb-3">
+                            <div class="card card-kpi kpi-warning shadow-sm py-2">
+                                <div class="card-body">
+                                    <div class="row no-gutters align-items-center">
+                                        <div class="col mr-2">
+                                            <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">Pending</div>
+                                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ pending_orders }}</div>
+                                        </div>
+                                        <div class="col-auto"><i class="fas fa-clock fa-2x text-gray-300"></i></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-xl-4 col-md-6 mb-3">
+                            <div class="card card-kpi kpi-success shadow-sm py-2">
+                                <div class="card-body">
+                                    <div class="row no-gutters align-items-center">
+                                        <div class="col mr-2">
+                                            <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Delivered</div>
+                                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ delivered_orders }}</div>
+                                        </div>
+                                        <div class="col-auto"><i class="fas fa-check-circle fa-2x text-gray-300"></i></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Orders Table -->
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header py-3">
+                            <h6 class="m-0 font-weight-bold text-primary">Recent Orders</h6>
+                        </div>
+                        <div class="card-body">
+                            {% if orders|length > 0 %}
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Job ID</th>
+                                            <th>Tracking ID</th>
+                                            <th>Parcel Type</th>
+                                            <th>Created</th>
+                                            <th>Due</th>
+                                            <th>Delivered</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for order in orders %}
+                                        <tr>
+                                            <td>{{ order.JobID }}</td>
+                                            <td>{{ order.TrackingID or '' }}</td>
+                                            <td>{{ order.ParcelType or '' }}</td>
+                                            <td>{{ order.DateCreated or '' }}</td>
+                                            <td>{{ order.DateDue or '' }}</td>
+                                            <td>{{ order.DateDelivered or '' }}</td>
+                                            <td>
+                                                {% if order.Status == 'Delivered' %}
+                                                <span class="status-badge status-delivered">{{ order.Status }}</span>
+                                                {% elif order.Status == 'In Transit' %}
+                                                <span class="status-badge status-transit">{{ order.Status }}</span>
+                                                {% else %}
+                                                <span class="status-badge status-pending">{{ order.Status }}</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <p class="text-muted mb-0">No orders found.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
