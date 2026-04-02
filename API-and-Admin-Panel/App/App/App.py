@@ -77,4 +77,8 @@ def hello():
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Respect platform-provided host/port so preview can bind correctly.
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", "3001"))
+    debug = os.environ.get("FLASK_DEBUG", "").lower() in ("1", "true", "yes")
+    app.run(host=host, port=port, debug=debug)
