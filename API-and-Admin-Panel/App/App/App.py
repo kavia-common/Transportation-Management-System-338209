@@ -41,6 +41,8 @@ app.config['MYSQL_HOST'] = os.environ.get('MYSQL_HOST', 'localhost')
 app.config['MYSQL_USER'] = os.environ.get('MYSQL_USER', 'aquarian')
 app.config['MYSQL_PASSWORD'] = os.environ.get('MYSQL_PASSWORD', 'Aquarian123*')
 app.config['MYSQL_DB'] = os.environ.get('MYSQL_DB', 'aquarian')
+# Optional; used by the PyMySQL connector in App.extensions
+app.config['MYSQL_PORT'] = int(os.environ.get('MYSQL_PORT', '3306'))
 
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(APP_ROOT, 'AdminPanel/static/images/receipts')

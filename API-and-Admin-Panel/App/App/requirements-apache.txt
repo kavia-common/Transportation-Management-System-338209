@@ -1,0 +1,14 @@
+"""
+Optional Apache/mod_wsgi requirements.
+
+These packages require Apache development headers (apxs) and are not installable
+in minimal environments by default.
+
+Install them only if you are deploying behind Apache with mod_wsgi:
+
+    pip install -r requirements.txt
+    pip install -r requirements-apache.txt
+"""
+
+mod-wsgi==4.9.3
+mod-wsgi-httpd==2.4.41.1
