@@ -2,7 +2,7 @@ import sys, os
 
 from flask import Blueprint, jsonify, make_response, request, session
 from flask import current_app as app
-from extensions import mysql
+from App.extensions import mysql
 from flask_cors import CORS
 import json, datetime, calendar, requests
 from werkzeug.utils import secure_filename

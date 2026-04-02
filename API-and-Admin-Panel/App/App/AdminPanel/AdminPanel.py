@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, session, make_response, jsonify
-from extensions import mysql
+from App.extensions import mysql
 
 admin_panel = Blueprint('admin_panel', __name__, template_folder='templates', static_folder='static')
 
