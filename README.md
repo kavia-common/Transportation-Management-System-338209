@@ -23,6 +23,10 @@ The API is written in *Python* and *SQL*.
 
 The API is used to fetch, update and remove content from the database. It returns JSON responses and handles GET, POST, PUT and DELETE methods.
 
+**API Documentation**
+- OpenAPI JSON: `/api/openapi.json`
+- Swagger UI: `/api/docs`
+
 [See API code here](https://github.com/musevarg/Transportation-Management-System/blob/master/API-and-Admin-Panel/App/App/API/RestAPI.py).
 
 Below is a sample output for each request method:

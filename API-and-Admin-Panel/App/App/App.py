@@ -31,6 +31,7 @@ from App.API.RestAPI import rest_api
 from App.AdminPanel.AdminPanel import admin_panel
 from App.DriverPortal.DriverPortal import driver_portal
 from App.CustomerPortal.CustomerPortal import customer_portal
+from App.api_docs import init_api_docs
 
 app = Flask(__name__)
 
@@ -67,6 +68,9 @@ app.register_blueprint(rest_api, url_prefix='/api')
 app.register_blueprint(admin_panel, url_prefix='/admin')
 app.register_blueprint(driver_portal, url_prefix='/driver')
 app.register_blueprint(customer_portal, url_prefix='/customer')
+
+# Register Swagger/OpenAPI documentation endpoints after blueprints.
+init_api_docs(app)
 
 
 # PUBLIC_INTERFACE
