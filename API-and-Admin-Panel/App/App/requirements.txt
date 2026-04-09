@@ -1,5 +1,4 @@
 Flask==3.0.3
 Flask-Cors==5.0.0
-Flask-MySQLdb==2.0.0
-mysqlclient==2.2.4
+PyMySQL==1.1.1
 python-dotenv==1.0.1
