@@ -1,744 +1,726 @@
-import sys, os
-[sys.path.append('/var/www/html/env/App/App')]
+import datetime
+import json
+import os
+import calendar
+from typing import Any, Dict, List, Optional, Tuple
 
 from flask import Blueprint, jsonify, make_response, request
 from flask import current_app as app
-from extensions import mysql
 from flask_cors import CORS
-import json, datetime, calendar, requests
-from requests.auth import HTTPDigestAuth
 from werkzeug.utils import secure_filename
 
-rest_api = Blueprint('rest_api', __name__)
-CORS(rest_api)
+from extensions import mysql
 
-@rest_api.route("/")
+rest_api = Blueprint("rest_api", __name__)
+# Keep CORS permissive for compatibility with the Android app; allow overriding via env.
+_allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "*").strip()
+_allowed_origins = "*" if _allowed_origins_env == "*" else [o.strip() for o in _allowed_origins_env.split(",") if o.strip()]
+CORS(rest_api, resources={r"/*": {"origins": _allowed_origins}})
+
+# Whitelist tables to prevent SQL injection via table name.
+_ALLOWED_TABLES: Dict[str, str] = {
+    "Jobs": "JobID",
+    "Drivers": "DriverID",
+    "Vehicles": "VehicleID",
+    "Customers": "CustomerID",
+    "Locations": "LocationID",
+    "Receipts": "ReceiptID",
+    "Admins": "AdminID",
+}
+
+
+def _json_response(payload: Any, status: int = 200):
+    """Return a JSON response with the same behavior as legacy endpoints (arrays/dicts)."""
+    resp = make_response(jsonify(payload), status)
+    resp.headers["Content-Type"] = "application/json"
+    return resp
+
+
+def _fetchall_dict(cur) -> List[Dict[str, Any]]:
+    """Fetch all rows from cursor as list of dicts."""
+    row_headers = [x[0] for x in cur.description]
+    return [dict(zip(row_headers, row)) for row in cur.fetchall()]
+
+
+def _get_payload() -> Dict[str, Any]:
+    """Merge query params and JSON body (JSON overrides query args)."""
+    payload: Dict[str, Any] = dict(request.args) if request.args else {}
+    body = request.get_json(silent=True) or {}
+    if isinstance(body, dict):
+        payload.update(body)
+    return payload
+
+
+def _normalize_value(val: Any) -> Any:
+    """Convert legacy 'None' string / blanks into Python None."""
+    if val is None:
+        return None
+    if isinstance(val, str):
+        v = val.strip()
+        if v == "" or v.lower() == "none" or v.lower() == "null":
+            return None
+        return val
+    return val
+
+
+def _get_columns(table: str) -> List[str]:
+    """Get column names for a whitelisted table."""
+    if table not in _ALLOWED_TABLES:
+        raise ValueError("Invalid table")
+    conn = mysql.connection
+    cur = conn.cursor()
+    cur.execute(f"SHOW COLUMNS FROM {table}")  # table is whitelisted
+    return [row[0] for row in cur.fetchall()]
+
+
+def _get_int_arg(name: str, default: Optional[int] = None) -> Optional[int]:
+    v = request.args.get(name)
+    if v is None:
+        return default
+    try:
+        return int(v)
+    except ValueError:
+        return default
+
+
+@rest_api.route("/", methods=["GET"])
 def apiDefault():
-    return make_response(jsonify([{"Name":"Aquarian REST API","Version":"0.1","Created":"08/02/2020","LastModified":"29/02/2020"}]))
+    return _json_response([{"Name": "Aquarian REST API", "Version": "0.2", "Created": "08/02/2020", "LastModified": "2026/04/09"}])
 
 
 # Jobs
-
-@rest_api.route('/jobs/')
-@rest_api.route('/jobs', methods=['GET', 'POST'])
+@rest_api.route("/jobs/", methods=["GET"])
+@rest_api.route("/jobs", methods=["GET", "POST"])
 def returnJobs():
-  if request.method == 'GET':
-     if "limit1" in request.args and "limit2" in request.args:
-        return getTable("Jobs", request.args["limit1"], request.args["limit2"])
-     else:
+    if request.method == "GET":
+        limit1 = request.args.get("limit1")
+        limit2 = request.args.get("limit2")
+        if limit1 is not None and limit2 is not None:
+            return getTable("Jobs", limit1, limit2)
         return getAllTable("Jobs")
-  elif request.method == 'POST':
-    return createRecord(request, "Jobs", "JobID")
+    return createRecord("Jobs")
 
 
-
-@rest_api.route('/jobs/<int:id>/')
-@rest_api.route('/jobs/<int:id>', methods=['GET', 'PUT', 'DELETE'])
-def get_job(id):
-  if request.method == 'GET':
-    return getRecord("Jobs", "JobID", id)
-  elif request.method == 'PUT':
-    return updateTable(request, 'Jobs', 'JobID', id)
-  elif request.method == 'DELETE':
+@rest_api.route("/jobs/<int:id>/", methods=["GET"])
+@rest_api.route("/jobs/<int:id>", methods=["GET", "PUT", "DELETE"])
+def get_job(id: int):
+    if request.method == "GET":
+        return getRecord("Jobs", "JobID", id)
+    if request.method == "PUT":
+        return updateTable("Jobs", "JobID", id)
     return deleteRecord("Jobs", "JobID", id)
 
 
-@rest_api.route('/jobs/pending', methods=['GET'])
+@rest_api.route("/jobs/pending", methods=["GET"])
 def returnPendingJobs():
-     if "limit1" in request.args and "limit2" in request.args:
-       cur = mysql.connection.cursor()
-       cur.execute("SELECT * FROM Jobs WHERE Status='Pending' LIMIT " + request.args['limit1'] + " OFFSET " + request.args['limit2'])
-       row_headers=[x[0] for x in cur.description]
-       rv = cur.fetchall()
-       json_data=[]
-       for result in rv:
-            json_data.append(dict(zip(row_headers,result)))
-       #return json.dumps(json_data, default=str)
-       resp = make_response(json.dumps(json_data, default=str))
-       resp.headers['Content-Type'] = 'application/json'
-       return resp
-     else:
-       cur = mysql.connection.cursor()
-       cur.execute("SELECT * FROM Jobs WHERE Status='Pending'")
-       row_headers=[x[0] for x in cur.description]
-       rv = cur.fetchall()
-       json_data=[]
-       for result in rv:
-            json_data.append(dict(zip(row_headers,result)))
-       #return json.dumps(json_data, default=str)
-       resp = make_response(json.dumps(json_data, default=str))
-       resp.headers['Content-Type'] = 'application/json'
-       return resp
+    return _get_jobs_by_status("Pending")
 
-@rest_api.route('/jobs/delivered', methods=['GET'])
+
+@rest_api.route("/jobs/delivered", methods=["GET"])
 def returnDoneJobs():
-     if "limit1" in request.args and "limit2" in request.args:
-       cur = mysql.connection.cursor()
-       cur.execute("SELECT * FROM Jobs WHERE Status='Delivered' LIMIT " + request.args['limit1'] + " OFFSET " + request.args['limit2'])
-       row_headers=[x[0] for x in cur.description]
-       rv = cur.fetchall()
-       json_data=[]
-       for result in rv:
-            json_data.append(dict(zip(row_headers,result)))
-       #return json.dumps(json_data, default=str)
-       resp = make_response(json.dumps(json_data, default=str))
-       resp.headers['Content-Type'] = 'application/json'
-       return resp
-     else:
-       cur = mysql.connection.cursor()
-       cur.execute("SELECT * FROM Jobs WHERE Status='Delivered'")
-       row_headers=[x[0] for x in cur.description]
-       rv = cur.fetchall()
-       json_data=[]
-       for result in rv:
-            json_data.append(dict(zip(row_headers,result)))
-       #return json.dumps(json_data, default=str)
-       resp = make_response(json.dumps(json_data, default=str))
-       resp.headers['Content-Type'] = 'application/json'
-       return resp
+    return _get_jobs_by_status("Delivered")
 
 
-@rest_api.route('/jobs/<string:id>/location', methods=['GET', 'PUT'])
-def getParcelLocation(id):
-  if request.method == 'GET':
-     cur = mysql.connection.cursor()
-     cur.execute("SELECT DriverID FROM Jobs WHERE TrackingID=%s", (id,))
-     if cur.rowcount == 0:
-        return make_response(jsonify([{"Error": "No matching ID found in database."}]), 404)
-     else:
-       result = cur.fetchone()
-       cur.execute("SELECT DriverID, FirstName, Location FROM Drivers WHERE DriverID=%s", (result[0],))
-       if cur.rowcount == 0:
-          return make_response(jsonify([{"Error": "No matching ID found in database."}]), 404)
-       else:
-          row_headers=[x[0] for x in cur.description]
-          rv = cur.fetchall()
-          json_data=[]
-          for result in rv:
-              json_data.append(dict(zip(row_headers,result)))
-          resp = make_response(json.dumps(json_data, default=str))
-          resp.headers['Content-Type'] = 'application/json'
-          return resp
+def _get_jobs_by_status(status: str):
+    limit1 = _get_int_arg("limit1")
+    limit2 = _get_int_arg("limit2")
+    conn = mysql.connection
+    cur = conn.cursor()
+
+    if limit1 is not None and limit2 is not None:
+        cur.execute("SELECT * FROM Jobs WHERE Status=%s LIMIT %s OFFSET %s", (status, limit1, limit2))
+    else:
+        cur.execute("SELECT * FROM Jobs WHERE Status=%s", (status,))
+    return _json_response(_fetchall_dict(cur))
+
+
+@rest_api.route("/jobs/<string:id>/location", methods=["GET", "PUT"])
+def getParcelLocation(id: str):
+    if request.method == "PUT":
+        # Legacy behavior: allow update Job location-related fields via updateTable.
+        # Kept for compatibility even if clients don't use it.
+        return updateTable("Jobs", "TrackingID", id)
+
+    conn = mysql.connection
+    cur = conn.cursor()
+    cur.execute("SELECT DriverID FROM Jobs WHERE TrackingID=%s", (id,))
+    if cur.rowcount == 0:
+        return _json_response([{"Error": "No matching ID found in database."}], 404)
+
+    driver_id = cur.fetchone()[0]
+    cur.execute("SELECT DriverID, FirstName, Location FROM Drivers WHERE DriverID=%s", (driver_id,))
+    if cur.rowcount == 0:
+        return _json_response([{"Error": "No matching ID found in database."}], 404)
+    return _json_response(_fetchall_dict(cur))
 
 
 # Drivers
-
-@rest_api.route('/drivers/')
-@rest_api.route('/drivers', methods=['GET', 'POST'])
+@rest_api.route("/drivers/", methods=["GET"])
+@rest_api.route("/drivers", methods=["GET", "POST"])
 def returnDrivers():
-  if request.method == 'GET':
-     if "limit1" in request.args and "limit2" in request.args:
-         sql = 'SELECT DriverID, VehicleID, Username, LastName, FirstName, DOB, NINo, DrivingLicenseNo, DrivingLicensePic, Address1, Address2, City, PostCode, Country, Location, DateCreated, LastConnected FROM Drivers LIMIT ' + request.args["limit1"] + ' OFFSET ' + request.args["limit2"]
-     else:
-         sql = 'SELECT DriverID, VehicleID, Username, LastName, FirstName, DOB, NINo, DrivingLicenseNo, DrivingLicensePic, Address1, Address2, City, PostCode, Country, Location, DateCreated, LastConnected FROM Drivers'
-     cur = mysql.connection.cursor()
-     cur.execute(sql)
-     row_headers=[x[0] for x in cur.description]
-     rv = cur.fetchall()
-     json_data=[]
-     for result in rv:
-          json_data.append(dict(zip(row_headers,result)))
-     #return json.dumps(json_data, default=str)
-     resp = make_response(json.dumps(json_data, default=str))
-     resp.headers['Content-Type'] = 'application/json'
-     return resp
-  elif request.method == 'POST':
+    if request.method == "GET":
+        limit1 = _get_int_arg("limit1")
+        limit2 = _get_int_arg("limit2")
+        conn = mysql.connection
+        cur = conn.cursor()
+
+        # Keep original field subset for GET
+        base_sql = """
+            SELECT DriverID, VehicleID, Username, LastName, FirstName, DOB, NINo, DrivingLicenseNo,
+                   DrivingLicensePic, Address1, Address2, City, PostCode, Country, Location,
+                   DateCreated, LastConnected
+            FROM Drivers
+        """
+        if limit1 is not None and limit2 is not None:
+            cur.execute(base_sql + " LIMIT %s OFFSET %s", (limit1, limit2))
+        else:
+            cur.execute(base_sql)
+        return _json_response(_fetchall_dict(cur))
+
+    # POST: preserve legacy behavior (auto-username + default password), but parameterize.
     try:
-     _json = request.args
-     conn = mysql.connection
-     cur = conn.cursor()
-     cur.execute("SELECT * FROM Drivers")
-     if cur.rowcount == 0:
-        return make_response(jsonify([{"Error": "No table " + table + " found in database."}]), 404)
-     else:
-        params = []
-        headers = []
-        row_headers=[x[0] for x in cur.description]
-        for header in row_headers:
-            headerExist = False
-            if header in request.args:
-               headerExist = True
-            if not headerExist:
-               if (header != 'DriverID'):
-                   headers.append(header)
-                   params.append('None')
+        payload = _get_payload()
+        first = payload.get("FirstName", "") or ""
+        last = payload.get("LastName", "") or ""
+        conn = mysql.connection
+        cur = conn.cursor()
+
+        # Generate unique username
+        uname_base = f"{first}{last}".replace(" ", "")
+        uname = uname_base if uname_base else "driver"
+        suffix = 1
+        while True:
+            cur.execute("SELECT 1 FROM Drivers WHERE Username=%s", (uname,))
+            if cur.rowcount == 0:
+                break
+            uname = f"{uname_base}{suffix}" if uname_base else f"driver{suffix}"
+            suffix += 1
+
+        cols = _get_columns("Drivers")
+        id_col = _ALLOWED_TABLES["Drivers"]
+        insert_cols = [c for c in cols if c != id_col]
+
+        values: List[Any] = []
+        for c in insert_cols:
+            if c == "DateCreated":
+                # Use NOW() in SQL
+                values.append("__NOW__")
+            elif c == "Username":
+                values.append(uname)
+            elif c == "Password":
+                values.append(payload.get("Password") or "Aquarian")
             else:
-               headers.append(header)
-               params.append(_json[header])
+                values.append(_normalize_value(payload.get(c)))
 
-        #Generate driver username
-        uname = _json['FirstName'] + _json['LastName']
-        x = 1
-        while x != 0:
-              cur.execute("SELECT * FROM Drivers WHERE Username='" + uname + "'")        
-              if cur.rowcount != 0:
-                 if x == 1:
-                    uname += str(x)
-                    x+=1
-                 else:
-                    uname = uname[:-1] + str(x)
-                    x+=1
-              else:
-                x=0
-
-
-        sql = "INSERT INTO Drivers ( "
-        for x in range(0,len(headers)):
-            if headers[x] == 'DateCreated':
-               params[x] = 'NOW()'
-            if headers[x] == 'Username':
-               params[x] = uname
-            if headers[x] == 'Password':
-               params[x] = 'Aquarian'
-
-            sql += ''.join(str(v) for v in headers[x]) + ','
-        sql = sql[:-1]
-        sql += ") VALUES ("
-        for x in range(0,len(params)):
-            if params[x] == 'NOW()':
-              sql += ''.join(str(v) for v in params[x]) + ","
+        # Build SQL with NOW() literals where needed.
+        placeholders: List[str] = []
+        params: List[Any] = []
+        for v in values:
+            if v == "__NOW__":
+                placeholders.append("NOW()")
             else:
-              sql += "'" + ''.join(str(v) for v in params[x]) + "',"
-        sql = sql[:-1]
+                placeholders.append("%s")
+                params.append(v)
 
-        sql += ")"
-        sql = sql.replace("'None'","null")
-        cur.execute(sql)
+        sql = f"INSERT INTO Drivers ({','.join(insert_cols)}) VALUES ({','.join(placeholders)})"
+        cur.execute(sql, tuple(params))
         conn.commit()
-        resp = make_response(jsonify([{'Success': 'Record added to table Drivers successfully!'}]))
-        resp.status_code = 200
-        return resp
-
+        return _json_response([{"Success": "Record added to table Drivers successfully!"}], 200)
     except Exception as e:
-       return jsonify({'Error':'Line {}: '.format(sys.exc_info()[-1].tb_lineno) + str(e)})
+        return _json_response({"Error": str(e)}, 500)
 
 
-@rest_api.route('/drivers/<int:id>/')
-@rest_api.route('/drivers/<int:id>', methods=['GET', 'PUT', 'DELETE'])
-def get_driver(id):
-  if request.method == 'GET':
-     cur = mysql.connection.cursor()
-     cur.execute("SELECT DriverID, VehicleID, LastName, FirstName, DOB, NINo, DrivingLicenseNo, DrivingLicensePic, Address1, Address2, City, PostCode, Country, Location, DateCreated, LastConnected FROM Drivers WHERE DriverID = %s", (id,))
-     if cur.rowcount == 0:
-        return make_response(jsonify([{"Error": "No matching ID found in database."}]), 404)
-     else:
-        row_headers=[x[0] for x in cur.description]
-        rv = cur.fetchall()
-        json_data=[]
-        for result in rv:
-            json_data.append(dict(zip(row_headers,result)))
-        resp = make_response(json.dumps(json_data, default=str))
-        resp.headers['Content-Type'] = 'application/json'
-        return resp
-  elif request.method == 'PUT':
-      return updateTable(request, 'Drivers', 'DriverID', id)
-  elif request.method == 'DELETE':
+@rest_api.route("/drivers/<int:id>/", methods=["GET"])
+@rest_api.route("/drivers/<int:id>", methods=["GET", "PUT", "DELETE"])
+def get_driver(id: int):
+    if request.method == "GET":
+        conn = mysql.connection
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT DriverID, VehicleID, LastName, FirstName, DOB, NINo, DrivingLicenseNo, DrivingLicensePic,
+                   Address1, Address2, City, PostCode, Country, Location, DateCreated, LastConnected
+            FROM Drivers WHERE DriverID=%s
+            """,
+            (id,),
+        )
+        if cur.rowcount == 0:
+            return _json_response([{"Error": "No matching ID found in database."}], 404)
+        return _json_response(_fetchall_dict(cur))
+    if request.method == "PUT":
+        return updateTable("Drivers", "DriverID", id)
     return deleteRecord("Drivers", "DriverID", id)
 
 
-@rest_api.route('/drivers/<int:id>/location', methods=['GET', 'PUT'])
-def getLocation(id):
-  if request.method == 'GET':
-     cur = mysql.connection.cursor()
-     cur.execute("SELECT DriverID, FirstName, Location FROM Drivers WHERE DriverID=%s", (id,))
-     if cur.rowcount == 0:
-        return make_response(jsonify([{"Error": "No matching ID found in database."}]), 404)
-     else:
-        row_headers=[x[0] for x in cur.description]
-        rv = cur.fetchall()
-        json_data=[]
-        for result in rv:
-            json_data.append(dict(zip(row_headers,result)))
-        resp = make_response(json.dumps(json_data, default=str))
-        resp.headers['Content-Type'] = 'application/json'
-        return resp
-  elif request.method == 'PUT':
-    return updateTable(request, 'Drivers', 'DriverID', id)
+@rest_api.route("/drivers/<int:id>/location", methods=["GET", "PUT"])
+def getLocation(id: int):
+    if request.method == "GET":
+        conn = mysql.connection
+        cur = conn.cursor()
+        cur.execute("SELECT DriverID, FirstName, Location FROM Drivers WHERE DriverID=%s", (id,))
+        if cur.rowcount == 0:
+            return _json_response([{"Error": "No matching ID found in database."}], 404)
+        return _json_response(_fetchall_dict(cur))
+    return updateTable("Drivers", "DriverID", id)
+
 
 # Driver Login (Android App)
-@rest_api.route('/drivers/login', methods=['POST'])
+@rest_api.route("/drivers/login", methods=["POST"])
 def driver_login():
-    _json = request.args
+    payload = _get_payload()
+    username = payload.get("Username")
+    password = payload.get("Password")
+    if not username or not password:
+        return _json_response([{"Status": "Error", "Message": "Login failed: Missing credentials"}], 200)
+
     conn = mysql.connection
     cur = conn.cursor()
-    cur.execute("SELECT Password FROM Drivers WHERE Username='" + _json['Username'] + "'")
+    cur.execute("SELECT DriverID, FirstName, Password, LastConnected, VehicleID FROM Drivers WHERE Username=%s", (username,))
     if cur.rowcount == 0:
-       return make_response(jsonify([{"Status":"Error","Message":"Login failed: Wrong Username"}]), 200)
-    else:
-       result = cur.fetchone()
-       if _json['Password'] == result[0]:
-          cur.execute("UPDATE Drivers SET LastConnected = NOW() WHERE Username='" + _json['Username'] + "'")
-          conn.commit()
-          cur.execute("SELECT DriverID, FirstName, LastConnected, VehicleID FROM Drivers WHERE Username='" + _json['Username'] + "'")
-          result = cur.fetchone()
-          return make_response(jsonify([{"Status":"Success","Message":"Login Succesful","DriverID":result[0],"FirstName":result[1],"LastConnected":result[2],"VehicleID":result[3]}]), 200)
-       else:
-          return make_response(jsonify([{"Status":"Error","Message":"Login failed: Wrong Password"}]), 200)
+        return _json_response([{"Status": "Error", "Message": "Login failed: Wrong Username"}], 200)
+
+    row = cur.fetchone()
+    if password != row[2]:
+        return _json_response([{"Status": "Error", "Message": "Login failed: Wrong Password"}], 200)
+
+    cur.execute("UPDATE Drivers SET LastConnected=NOW() WHERE Username=%s", (username,))
+    conn.commit()
+    return _json_response(
+        [
+            {
+                "Status": "Success",
+                "Message": "Login Succesful",
+                "DriverID": row[0],
+                "FirstName": row[1],
+                "LastConnected": row[3],
+                "VehicleID": row[4],
+            }
+        ],
+        200,
+    )
 
 
 # Vehicles
-
-@rest_api.route('/vehicles/')
-@rest_api.route('/vehicles', methods=['GET', 'POST'])
+@rest_api.route("/vehicles/", methods=["GET"])
+@rest_api.route("/vehicles", methods=["GET", "POST"])
 def returnVehicles():
-  if request.method == 'GET':
-     if "limit1" in request.args and "limit2" in request.args:
-        return getTable("Vehicles", request.args["limit1"], request.args["limit2"])
-     else:
+    if request.method == "GET":
+        limit1 = request.args.get("limit1")
+        limit2 = request.args.get("limit2")
+        if limit1 is not None and limit2 is not None:
+            return getTable("Vehicles", limit1, limit2)
         return getAllTable("Vehicles")
-  elif request.method == 'POST':
-    return createRecord(request, "Vehicles", "VehicleID")
+    return createRecord("Vehicles")
 
 
-@rest_api.route('/vehicles/<int:id>/')
-@rest_api.route('/vehicles/<int:id>', methods=['GET', 'PUT', 'DELETE'])
-def get_vehicle(id):
-  if request.method == 'GET':
-    return getRecord("Vehicles", "VehicleID", id)
-  elif request.method == 'PUT':
-    return updateTable(request, 'Vehicles', 'VehicleID', id)
-  elif request.method == 'DELETE':
+@rest_api.route("/vehicles/<int:id>/", methods=["GET"])
+@rest_api.route("/vehicles/<int:id>", methods=["GET", "PUT", "DELETE"])
+def get_vehicle(id: int):
+    if request.method == "GET":
+        return getRecord("Vehicles", "VehicleID", id)
+    if request.method == "PUT":
+        return updateTable("Vehicles", "VehicleID", id)
     return deleteRecord("Vehicles", "VehicleID", id)
 
 
-
-
-
 # Customers
-
-@rest_api.route('/customers/')
-@rest_api.route('/customers', methods=['GET', 'POST'])
+@rest_api.route("/customers/", methods=["GET"])
+@rest_api.route("/customers", methods=["GET", "POST"])
 def returnCustomers():
-  if request.method == 'GET':
-     if "limit1" in request.args and "limit2" in request.args:
-        return getTable("Customers", request.args["limit1"], request.args["limit2"])
-     else:
+    if request.method == "GET":
+        limit1 = request.args.get("limit1")
+        limit2 = request.args.get("limit2")
+        if limit1 is not None and limit2 is not None:
+            return getTable("Customers", limit1, limit2)
         return getAllTable("Customers")
-  elif request.method == 'POST':
-    return createRecord(request, "Customers", "CustomerID")
+    return createRecord("Customers")
 
 
-@rest_api.route('/customers/<int:id>/')
-@rest_api.route('/customers/<int:id>', methods=['GET', 'PUT', 'DELETE'])
-def get_customer(id):
-  if request.method == 'GET':
-    return getRecord("Customers", "CustomerID", id)
-  elif request.method == 'PUT':
-    return updateTable(request, 'Customers', 'CustomerID', id)
-  elif request.method == 'DELETE':
+@rest_api.route("/customers/<int:id>/", methods=["GET"])
+@rest_api.route("/customers/<int:id>", methods=["GET", "PUT", "DELETE"])
+def get_customer(id: int):
+    if request.method == "GET":
+        return getRecord("Customers", "CustomerID", id)
+    if request.method == "PUT":
+        return updateTable("Customers", "CustomerID", id)
     return deleteRecord("Customers", "CustomerID", id)
 
 
-
 # Pick-Up and Drop-Off Locations
-
-@rest_api.route('/locations/')
-@rest_api.route('/locations', methods=['GET', 'POST'])
+@rest_api.route("/locations/", methods=["GET"])
+@rest_api.route("/locations", methods=["GET", "POST"])
 def returnLocations():
-  if request.method == 'GET':
-     if "limit1" in request.args and "limit2" in request.args:
-        return getTable("Locations", request.args["limit1"], request.args["limit2"])
-     else:
+    if request.method == "GET":
+        limit1 = request.args.get("limit1")
+        limit2 = request.args.get("limit2")
+        if limit1 is not None and limit2 is not None:
+            return getTable("Locations", limit1, limit2)
         return getAllTable("Locations")
-  elif request.method == 'POST':
-    return createRecord(request, "Locations", "CustomerID")
+    # NOTE: legacy code used wrong idname; fixed to LocationID.
+    return createRecord("Locations")
 
-@rest_api.route('/locations/<int:id>/')
-@rest_api.route('/locations/<int:id>', methods=['GET', 'PUT', 'DELETE'])
-def get_location(id):
-  if request.method == 'GET':
-    return getRecord("Locations", "LocationID", id)
-  elif request.method == 'PUT':
-    return updateTable(request, 'Locations', 'LocationID', id)
-  elif request.method == 'DELETE':
+
+@rest_api.route("/locations/<int:id>/", methods=["GET"])
+@rest_api.route("/locations/<int:id>", methods=["GET", "PUT", "DELETE"])
+def get_location(id: int):
+    if request.method == "GET":
+        return getRecord("Locations", "LocationID", id)
+    if request.method == "PUT":
+        return updateTable("Locations", "LocationID", id)
     return deleteRecord("Locations", "LocationID", id)
 
 
-
 # Receipts
-
-@rest_api.route('/receipts/')
-@rest_api.route('/receipts', methods=['GET', 'POST'])
+@rest_api.route("/receipts/", methods=["GET"])
+@rest_api.route("/receipts", methods=["GET", "POST"])
 def returnReceipts():
-  if request.method == 'GET':
-     if "limit1" in request.args and "limit2" in request.args:
-        return getTable("Receipts", request.args["limit1"], request.args["limit2"])
-     else:
+    if request.method == "GET":
+        limit1 = request.args.get("limit1")
+        limit2 = request.args.get("limit2")
+        if limit1 is not None and limit2 is not None:
+            return getTable("Receipts", limit1, limit2)
         return getAllTable("Receipts")
-  elif request.method == 'POST':
-     return createRecord(request, "Receipts", "ReceiptID")
+    return createRecord("Receipts")
 
 
-@rest_api.route('/receipts/<int:id>/')
-@rest_api.route('/receipts/<int:id>', methods=['GET', 'PUT', 'DELETE'])
-def get_receipt(id):
-  if request.method == 'GET':
-    return getRecord("Receipts", "ReceiptID", id)
-  elif request.method == 'PUT':
-    return updateTable(request, 'Receipts', 'ReceiptID', id)
-  elif request.method == 'DELETE':
+@rest_api.route("/receipts/<int:id>/", methods=["GET"])
+@rest_api.route("/receipts/<int:id>", methods=["GET", "PUT", "DELETE"])
+def get_receipt(id: int):
+    if request.method == "GET":
+        return getRecord("Receipts", "ReceiptID", id)
+    if request.method == "PUT":
+        return updateTable("Receipts", "ReceiptID", id)
     return deleteRecord("Receipts", "ReceiptID", id)
 
 
-@rest_api.route('/receipts/driver/<int:id>/')
-@rest_api.route('/receipts/driver/<int:id>', methods=['GET'])
-def get_receipt_by_driver(id):
-     cur = mysql.connection.cursor()
-     cur.execute("SELECT * FROM Receipts WHERE DriverID=%s AND DATE(DateCreated)=DATE(NOW())", (id,))
-     row_headers=[x[0] for x in cur.description]
-     rv = cur.fetchall()
-     json_data=[]
-     for result in rv:
-          json_data.append(dict(zip(row_headers,result)))
-     #return json.dumps(json_data, default=str)
-     resp = make_response(json.dumps(json_data, default=str))
-     resp.headers['Content-Type'] = 'application/json'
-     return resp
-  
+@rest_api.route("/receipts/driver/<int:id>/", methods=["GET"])
+@rest_api.route("/receipts/driver/<int:id>", methods=["GET"])
+def get_receipt_by_driver(id: int):
+    conn = mysql.connection
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM Receipts WHERE DriverID=%s AND DATE(DateCreated)=DATE(NOW())", (id,))
+    return _json_response(_fetchall_dict(cur))
 
 
 # FULL JOB
-
-@rest_api.route('/jobs/full/<int:id>/')
-@rest_api.route('/jobs/full/<int:id>', methods=['GET'])
-def get_full_job(id):
-   cur = mysql.connection.cursor()
-
-   cur.execute("SELECT JobId, TrackingID, Status, ParcelType, ParcelSize, ParcelWeight, DateCreated, DateDue, DateDelivered, DistanceTravelled, Picture1, Picture2, Comments FROM Jobs WHERE JobID = %s", (id,))
-   if cur.rowcount == 0:
-      return '{"Error":"No matching ID was found in the database."}'
-   else:
-      row_headers=[x[0] for x in cur.description]
-      rv = cur.fetchall()
-      job_data=[]
-      for result in rv:
-          job_data.append(dict(zip(row_headers,result)))
-      job_data = json.dumps(job_data, default=str)
-
-      cur.execute("SELECT CustomerID FROM Jobs WHERE JobID = %s", (id,))
-      rv = cur.fetchall()
-      for row in rv:
-          cid=row[0]
-
-      cur.execute("SELECT * FROM Customers WHERE CustomerID = %s", (cid,))
-      row_headers=[x[0] for x in cur.description]
-      rv = cur.fetchall()
-      customer_data=[]
-      for result in rv:
-          customer_data.append(dict(zip(row_headers,result)))
-      customer_data = json.dumps(customer_data, default=str)
-
-      cur.execute("SELECT PickupID FROM Jobs WHERE JobID = %s", (id,))
-      rv = cur.fetchall()
-      for row in rv:
-          cid=row[0]
-
-      cur.execute("SELECT * FROM Locations WHERE LocationID = %s", (cid,))
-      row_headers=[x[0] for x in cur.description]
-      rv = cur.fetchall()
-      pickup_data=[]
-      for result in rv:
-          pickup_data.append(dict(zip(row_headers,result)))
-      pickup_data = json.dumps(pickup_data, default=str)
-
-      cur.execute("SELECT DropOffID FROM Jobs WHERE JobID = %s", (id,))
-      rv = cur.fetchall()
-      for row in rv:
-          cid=row[0]
-
-      cur.execute("SELECT * FROM Locations WHERE LocationID = %s", (cid,))
-      row_headers=[x[0] for x in cur.description]
-      rv = cur.fetchall()
-      dropoff_data=[]
-      for result in rv:
-          dropoff_data.append(dict(zip(row_headers,result)))
-      dropoff_data = json.dumps(dropoff_data, default=str)
-
-      #return str('[{"Job":%s,"Customer":%s,"Pickup":%s,"Dropoff":%s}]' % (job_data, customer_data, pickup_data, dropoff_data))
-      resp = make_response(str('{"Job":%s,"Customer":%s,"Pickup":%s,"Dropoff":%s}' % (job_data, customer_data, pickup_data, dropoff_data)))
-      resp.headers['Content-Type'] = 'application/json'
-      return resp
-
-
-@rest_api.route('/drivers/assigned/<int:id>/')
-@rest_api.route('/drivers/assigned/<int:id>', methods=['GET'])
-def getAssignedJobs(id):
-   cur = mysql.connection.cursor()
-   cur.execute("SELECT JobID FROM Jobs WHERE Status='Pending' AND DriverID=%s", (id,))
-   if cur.rowcount == 0:
-      return '{"Error":"No jobs found."}'
-   else:
-      row_headers=[x[0] for x in cur.description]
-      rv = cur.fetchall()
-      json_data=[]
-      for result in rv:
-          json_data.append(dict(zip(row_headers,result)))
-      #resp = make_response(json.dumps(json_data, default=str))
-      #resp.headers['Content-Type'] = 'application/json'
-      #return resp
-      #resp = json.loads(json.dumps(json_data, default=str))
-      #resp = json.loads(resp.content)
-      full_array=[]
-      url = "http://soc-web-liv-82.napier.ac.uk/api/jobs/full/"
-      for data in json_data:
-        myResponse = requests.get(url + str(data['JobID']))
-        if (myResponse.ok):
-           full_array.append(json.loads(myResponse.content))
-      resp = make_response(json.dumps(full_array, default=str))
-      resp.headers['Content-Type'] = 'application/json'
-      return resp
-
-# 404 Error Handler
-@rest_api.route("<path:invalid_path>")
-def missing_resource(invalid_path):
-    return make_response(jsonify([{"Error": "Not Found"}]), 404) 
-
-
-# Admin Login
-@rest_api.route('/admin', methods=['POST'])
-def admin_login():
-    return login(request, "Admins")
-
-
-# GET METHOD
-
-def getAllTable(table):
-     cur = mysql.connection.cursor()
-     cur.execute('SELECT * FROM ' + table)
-     row_headers=[x[0] for x in cur.description]
-     rv = cur.fetchall()
-     json_data=[]
-     for result in rv:
-          json_data.append(dict(zip(row_headers,result)))
-     #return json.dumps(json_data, default=str)
-     resp = make_response(json.dumps(json_data, default=str))
-     resp.headers['Content-Type'] = 'application/json'
-     return resp
-
-def getTable(table, limit1, limit2):
-     cur = mysql.connection.cursor()
-     cur.execute('SELECT * FROM ' + table + ' LIMIT ' + limit1 + ' OFFSET ' + limit2)
-     row_headers=[x[0] for x in cur.description]
-     rv = cur.fetchall()
-     json_data=[]
-     for result in rv:
-          json_data.append(dict(zip(row_headers,result)))
-     #return json.dumps(json_data, default=str)
-     resp = make_response(json.dumps(json_data, default=str))
-     resp.headers['Content-Type'] = 'application/json'
-     return resp
-
-
-# GET RECORD
-def getRecord(table, idname, id):
-     cur = mysql.connection.cursor()
-     cur.execute("SELECT * FROM " + table + " WHERE " + idname + " = %s", (id,))
-     if cur.rowcount == 0:
-        return make_response(jsonify([{"Error": "No matching ID found in database."}]), 404)
-     else:
-        row_headers=[x[0] for x in cur.description]
-        rv = cur.fetchall()
-        json_data=[]
-        for result in rv:
-            json_data.append(dict(zip(row_headers,result)))
-        resp = make_response(json.dumps(json_data, default=str))
-        resp.headers['Content-Type'] = 'application/json'
-        return resp
-
-
-
-# DELETE RECORD
-def deleteRecord(table, idname, id):
-    conn = mysql.connection
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM " + table + " WHERE " + idname + " = %s", (id,))
-    conn.commit()
-    resp = make_response(jsonify([{"Status":"One row with id " + str(id) + " deleted from " + table}]))
-    return resp
-
-# CREATE METHOD
-
-def createRecord(request, table, idname):
-    try:
-     _json = request.args
-     conn = mysql.connection
-     cur = conn.cursor()
-     cur.execute("SELECT * FROM "+ table)
-     if cur.rowcount == 0:
-        return make_response(jsonify([{"Error": "No table " + table + " found in database."}]), 404)
-     else:
-        params = []
-        headers = []
-        row_headers=[x[0] for x in cur.description]
-        for header in row_headers:
-            headerExist = False
-            if header in request.args:
-               headerExist = True
-            if not headerExist:
-               if header != idname:
-                  headers.append(header)
-                  params.append('None')
-            else:
-               headers.append(header)
-               params.append(_json[header])
-         
-        #params.append(idname)
-        #params.append(_id)
-        sql = "INSERT INTO "+ table +"( "
-        for x in range(0,len(headers)):
-            if headers[x] == 'DateCreated':
-               params[x] = 'NOW()'
-            sql += ''.join(str(v) for v in headers[x]) + ','
-        sql = sql[:-1]
-        sql += ") VALUES ("
-        for x in range(0,len(params)):
-            if params[x] == 'NOW()':
-              sql += ''.join(str(v) for v in params[x]) + ","
-            else:
-              sql += "'" + ''.join(str(v) for v in params[x]) + "',"
-        sql = sql[:-1]
-
-        sql += ")"
-        sql = sql.replace("'None'","null")
-        cur.execute(sql)
-        conn.commit()
-        if table == 'Jobs':
-           current_date = datetime.date.today()
-           trackid = 'AQ' + current_date.strftime("%m%y") + str(cur.lastrowid)
-           sql = 'UPDATE Jobs SET TrackingID=\'' + trackid + '\' WHERE JobID=' + str(cur.lastrowid)
-           cur.execute(sql)
-           conn.commit()
-        resp = make_response(jsonify([{'Success': 'Record added to table ' + table + ' successfully!'}]))
-        resp.status_code = 200
-        return resp
-
-    except Exception as e:
-       return jsonify({'Error':'Line {}: '.format(sys.exc_info()[-1].tb_lineno) + str(e)})
-
-
-# UPDATE METHOD
-
-def updateTable(request, table, idname, id):
-    try:
-     _json = request.args
-     conn = mysql.connection
-     cur = conn.cursor()
-     cur.execute("SELECT * FROM "+ table +" WHERE "+ idname + "=" + str(id))
-     if cur.rowcount == 0:
-        return make_response(jsonify([{"Error": "No matching ID found in database."}]), 404)
-     else:
-        params = []
-        row_headers=[x[0] for x in cur.description]
-        for header in row_headers:
-            headerExist = False
-            if header in request.args:
-               headerExist = True
-            if not headerExist:
-               cur.execute("SELECT " + header + " FROM " + table + " WHERE " + idname +  "=" + str(id))
-               result = cur.fetchone()
-               params.append(header)
-               params.append(result)
-            else:
-               params.append(header)
-               params.append(_json[header])
-
-        sql = "UPDATE "+ table +" SET "
-        for x in range(0,len(params),2):
-            sql += ''.join(str(v) for v in params[x]) + "='" + ''.join(str(v) for v in params[x+1]) + "',"
-        sql = sql[:-1]
-        sql += " WHERE " + idname + "=" + str(id)
-        sql = sql.replace("'None'","null")
-
-        cur.execute(sql)
-        conn.commit()
-        resp = make_response(jsonify([{'Success': 'Table ' + table + ' edited successfully!'}]))
-        resp.status_code = 200
-        return resp
-
-    except Exception as e:
-       return jsonify({'Error':str(e)})
-
-
-def login(request, table):
-    _json = request.args
+def _full_job_data(job_id: int) -> Dict[str, Any]:
+    """Build the legacy 'full job' response object without making HTTP calls."""
     conn = mysql.connection
     cur = conn.cursor()
-    cur.execute("SELECT Password FROM " + table + " WHERE Username='" + _json['Username'] + "'")
+
+    cur.execute(
+        """
+        SELECT JobID, TrackingID, Status, ParcelType, ParcelSize, ParcelWeight, DateCreated, DateDue,
+               DateDelivered, DistanceTravelled, Picture1, Picture2, Comments
+        FROM Jobs WHERE JobID=%s
+        """,
+        (job_id,),
+    )
+    job_rows = _fetchall_dict(cur)
+    if not job_rows:
+        return {"Error": "No matching ID was found in the database."}
+
+    # IDs required for linked records
+    cur.execute("SELECT CustomerID, PickupID, DropOffID FROM Jobs WHERE JobID=%s", (job_id,))
+    ids = cur.fetchone()
+    customer_id, pickup_id, dropoff_id = ids[0], ids[1], ids[2]
+
+    customer_rows: List[Dict[str, Any]] = []
+    pickup_rows: List[Dict[str, Any]] = []
+    dropoff_rows: List[Dict[str, Any]] = []
+
+    if customer_id is not None:
+        cur.execute("SELECT * FROM Customers WHERE CustomerID=%s", (customer_id,))
+        customer_rows = _fetchall_dict(cur)
+
+    if pickup_id is not None:
+        cur.execute("SELECT * FROM Locations WHERE LocationID=%s", (pickup_id,))
+        pickup_rows = _fetchall_dict(cur)
+
+    if dropoff_id is not None:
+        cur.execute("SELECT * FROM Locations WHERE LocationID=%s", (dropoff_id,))
+        dropoff_rows = _fetchall_dict(cur)
+
+    return {"Job": job_rows, "Customer": customer_rows, "Pickup": pickup_rows, "Dropoff": dropoff_rows}
+
+
+@rest_api.route("/jobs/full/<int:id>/", methods=["GET"])
+@rest_api.route("/jobs/full/<int:id>", methods=["GET"])
+def get_full_job(id: int):
+    data = _full_job_data(id)
+    if "Error" in data:
+        return _json_response(data, 404)
+    return _json_response(data)
+
+
+@rest_api.route("/drivers/assigned/<int:id>/", methods=["GET"])
+@rest_api.route("/drivers/assigned/<int:id>", methods=["GET"])
+def getAssignedJobs(id: int):
+    conn = mysql.connection
+    cur = conn.cursor()
+    cur.execute("SELECT JobID FROM Jobs WHERE Status=%s AND DriverID=%s", ("Pending", id))
+    job_ids = [row[0] for row in cur.fetchall()]
+    if not job_ids:
+        return _json_response({"Error": "No jobs found."}, 200)
+
+    full_array: List[Dict[str, Any]] = []
+    for job_id in job_ids:
+        full_array.append(_full_job_data(int(job_id)))
+    return _json_response(full_array)
+
+
+# Admin Login (API)
+@rest_api.route("/admin", methods=["POST"])
+def admin_login():
+    return login("Admins")
+
+
+# GET helpers
+def getAllTable(table: str):
+    if table not in _ALLOWED_TABLES:
+        return _json_response([{"Error": "Invalid table."}], 400)
+
+    conn = mysql.connection
+    cur = conn.cursor()
+    cur.execute(f"SELECT * FROM {table}")  # table is whitelisted
+    return _json_response(_fetchall_dict(cur))
+
+
+def getTable(table: str, limit1: str, limit2: str):
+    if table not in _ALLOWED_TABLES:
+        return _json_response([{"Error": "Invalid table."}], 400)
+
+    try:
+        l1 = int(limit1)
+        l2 = int(limit2)
+    except ValueError:
+        return _json_response([{"Error": "Invalid pagination parameters."}], 400)
+
+    conn = mysql.connection
+    cur = conn.cursor()
+    cur.execute(f"SELECT * FROM {table} LIMIT %s OFFSET %s", (l1, l2))  # table is whitelisted
+    return _json_response(_fetchall_dict(cur))
+
+
+def getRecord(table: str, idname: str, id_value: Any):
+    if table not in _ALLOWED_TABLES:
+        return _json_response([{"Error": "Invalid table."}], 400)
+
+    conn = mysql.connection
+    cur = conn.cursor()
+    # idname is controlled by server code per route
+    cur.execute(f"SELECT * FROM {table} WHERE {idname}=%s", (id_value,))
     if cur.rowcount == 0:
-       return make_response(jsonify([{"Status":"Error","Message":"Login failed: Wrong Username"}]), 200)
-    else:
-       result = cur.fetchone()
-       if _json['Password'] == result[0]:
-          cur.execute("UPDATE " + table + " SET LastConnected = NOW() WHERE Username='" + _json['Username'] + "'")
-          conn.commit()
-          return make_response(jsonify([{"Status":"Success","Message":"Login Succesful","Username":_json['Username']}]), 200)
-       else:
-          return make_response(jsonify([{"Status":"Error","Message":"Login failed: Wrong Password"}]), 200)
+        return _json_response([{"Error": "No matching ID found in database."}], 404)
+    return _json_response(_fetchall_dict(cur))
 
 
-# Admin Login
-@rest_api.route('/money', methods=['GET'])
+def deleteRecord(table: str, idname: str, id_value: Any):
+    if table not in _ALLOWED_TABLES:
+        return _json_response([{"Error": "Invalid table."}], 400)
+
+    conn = mysql.connection
+    cur = conn.cursor()
+    cur.execute(f"DELETE FROM {table} WHERE {idname}=%s", (id_value,))
+    conn.commit()
+    return _json_response([{"Status": f"One row with id {id_value} deleted from {table}"}], 200)
+
+
+def createRecord(table: str):
+    if table not in _ALLOWED_TABLES:
+        return _json_response([{"Error": "Invalid table."}], 400)
+
+    try:
+        payload = _get_payload()
+        conn = mysql.connection
+        cur = conn.cursor()
+
+        cols = _get_columns(table)
+        id_col = _ALLOWED_TABLES[table]
+        insert_cols = [c for c in cols if c != id_col]
+
+        values: List[Any] = []
+        for c in insert_cols:
+            if c == "DateCreated":
+                values.append("__NOW__")
+            else:
+                values.append(_normalize_value(payload.get(c)))
+
+        placeholders: List[str] = []
+        params: List[Any] = []
+        for v in values:
+            if v == "__NOW__":
+                placeholders.append("NOW()")
+            else:
+                placeholders.append("%s")
+                params.append(v)
+
+        sql = f"INSERT INTO {table} ({','.join(insert_cols)}) VALUES ({','.join(placeholders)})"
+        cur.execute(sql, tuple(params))
+        conn.commit()
+
+        # Preserve legacy tracking ID generation for Jobs.
+        if table == "Jobs":
+            current_date = datetime.date.today()
+            trackid = "AQ" + current_date.strftime("%m%y") + str(cur.lastrowid)
+            cur.execute("UPDATE Jobs SET TrackingID=%s WHERE JobID=%s", (trackid, cur.lastrowid))
+            conn.commit()
+
+        return _json_response([{"Success": f"Record added to table {table} successfully!"}], 200)
+    except Exception as e:
+        return _json_response({"Error": str(e)}, 500)
+
+
+def updateTable(table: str, idname: str, id_value: Any):
+    if table not in _ALLOWED_TABLES:
+        return _json_response([{"Error": "Invalid table."}], 400)
+
+    try:
+        payload = _get_payload()
+        conn = mysql.connection
+        cur = conn.cursor()
+
+        # Fetch current row to preserve legacy behavior (missing fields keep existing values).
+        cur.execute(f"SELECT * FROM {table} WHERE {idname}=%s", (id_value,))
+        if cur.rowcount == 0:
+            return _json_response([{"Error": "No matching ID found in database."}], 404)
+
+        row_headers = [x[0] for x in cur.description]
+        current_row = dict(zip(row_headers, cur.fetchone()))
+
+        cols = _get_columns(table)
+        id_col = _ALLOWED_TABLES[table]
+        update_cols = [c for c in cols if c != id_col]
+
+        set_parts: List[str] = []
+        params: List[Any] = []
+
+        for c in update_cols:
+            new_val = payload.get(c, current_row.get(c))
+            new_val = _normalize_value(new_val)
+            set_parts.append(f"{c}=%s")
+            params.append(new_val)
+
+        params.append(id_value)
+        sql = f"UPDATE {table} SET {','.join(set_parts)} WHERE {idname}=%s"
+        cur.execute(sql, tuple(params))
+        conn.commit()
+        return _json_response([{"Success": f"Table {table} edited successfully!"}], 200)
+    except Exception as e:
+        return _json_response({"Error": str(e)}, 500)
+
+
+def login(table: str):
+    if table not in _ALLOWED_TABLES:
+        return _json_response([{"Status": "Error", "Message": "Invalid table"}], 400)
+
+    payload = _get_payload()
+    username = payload.get("Username")
+    password = payload.get("Password")
+    if not username or not password:
+        return _json_response([{"Status": "Error", "Message": "Login failed: Missing credentials"}], 200)
+
+    conn = mysql.connection
+    cur = conn.cursor()
+    cur.execute(f"SELECT Password FROM {table} WHERE Username=%s", (username,))
+    if cur.rowcount == 0:
+        return _json_response([{"Status": "Error", "Message": "Login failed: Wrong Username"}], 200)
+
+    stored_password = cur.fetchone()[0]
+    if password != stored_password:
+        return _json_response([{"Status": "Error", "Message": "Login failed: Wrong Password"}], 200)
+
+    cur.execute(f"UPDATE {table} SET LastConnected=NOW() WHERE Username=%s", (username,))
+    conn.commit()
+    return _json_response([{"Status": "Success", "Message": "Login Succesful", "Username": username}], 200)
+
+
+# Dashboard: monthly revenue and receipts
+@rest_api.route("/money", methods=["GET"])
 def getMoney():
     current_date = datetime.date.today()
     current_month = current_date.month + 1
-    json = '['
+
+    out: List[Dict[str, Any]] = []
     for month in range(1, current_month):
-        json += '{"Month":"'+ calendar.month_name[month] +'",'
         amount = monthRevenue(month)
         receipt = monthReceipts(month)
-        if amount != None:
-           json += '"Amount":"'+str(round(amount,2))+'",'
-        else:
-           json += '"Amount":null,'
-        if receipt != None:
-           json += '"Receipts":"'+str(round(receipt,2))+'"},'
-        else:
-           json += '"Receipts":null},'
-    json = json[:-1] + ']'
-    return json
+        out.append(
+            {
+                "Month": calendar.month_name[month],
+                "Amount": round(float(amount), 2) if amount is not None else None,
+                "Receipts": round(float(receipt), 2) if receipt is not None else None,
+            }
+        )
+    return _json_response(out, 200)
 
 
-def monthRevenue(month):
-    sql = 'SELECT SUM(PricePaid) FROM Jobs WHERE MONTH(DateDelivered)=' + str(month)
+def monthRevenue(month: int) -> Optional[float]:
     conn = mysql.connection
     cur = conn.cursor()
-    cur.execute(sql)
-    if cur.rowcount == 0:
-        return "No data for this month"
-    else:
-       result = cur.fetchone()
-       return result[0]
+    cur.execute("SELECT SUM(PricePaid) FROM Jobs WHERE MONTH(DateDelivered)=%s", (month,))
+    result = cur.fetchone()
+    return result[0] if result else None
 
-def monthReceipts(month):
-    sql = 'SELECT SUM(Amount) FROM Receipts WHERE MONTH(DateCreated)=' + str(month)
+
+def monthReceipts(month: int) -> Optional[float]:
     conn = mysql.connection
     cur = conn.cursor()
-    cur.execute(sql)
-    if cur.rowcount == 0:
-        return "No data for this month"
-    else:
-       result = cur.fetchone()
-       return result[0]
+    cur.execute("SELECT SUM(Amount) FROM Receipts WHERE MONTH(DateCreated)=%s", (month,))
+    result = cur.fetchone()
+    return result[0] if result else None
 
-ALLOWED_EXTENSIONS = set(['txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'])
 
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+# File uploads (receipts and parcel pictures)
+ALLOWED_EXTENSIONS = {"txt", "pdf", "png", "jpg", "jpeg", "gif"}
 
-@rest_api.route('/receipts/uploads/')
-@rest_api.route('/receipts/uploads', methods=['POST'])
+
+def allowed_file(filename: str) -> bool:
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _unique_filename(folder: str, filename: str) -> str:
+    """Avoid overwriting existing files by adding a numeric suffix."""
+    base, ext = os.path.splitext(filename)
+    candidate = filename
+    i = 1
+    while os.path.exists(os.path.join(folder, candidate)):
+        candidate = f"{base}-{i}{ext}"
+        i += 1
+    return candidate
+
+
+@rest_api.route("/receipts/uploads/", methods=["POST"])
+@rest_api.route("/receipts/uploads", methods=["POST"])
 def upload_file():
-    if request.method == 'POST':
-        # check if the post request has the file part
-        if 'file' not in request.files:
-          return make_response(jsonify([{"Message": "ERROR - No file present."}]), 200)
-        file = request.files['file']
-        # if user does not select file, browser also
-        # submit a empty part without filename
-        if file.filename == '':
-          return make_response(jsonify([{"Message": "ERROR - No filename"}]), 200)
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-            return make_response(jsonify([{"Message": "File uploaded successfully."}]), 200)
+    # Android app expects: JSON array with object containing Message.
+    if "file" not in request.files:
+        return _json_response([{"Message": "ERROR - No file present."}], 200)
+
+    file = request.files["file"]
+    if not file or file.filename == "":
+        return _json_response([{"Message": "ERROR - No filename"}], 200)
+
+    if not allowed_file(file.filename):
+        return _json_response([{"Message": "ERROR - File type not allowed."}], 200)
+
+    upload_folder = app.config.get("UPLOAD_FOLDER")
+    if not upload_folder:
+        return _json_response([{"Message": "ERROR - Upload folder not configured."}], 500)
+
+    os.makedirs(upload_folder, exist_ok=True)
+
+    filename = secure_filename(file.filename)
+    filename = _unique_filename(upload_folder, filename)
+    abs_path = os.path.join(upload_folder, filename)
+    file.save(abs_path)
+
+    # Predictable URL (keeps existing android/admin convention)
+    file_url = f"/admin/static/images/receipts/{filename}"
+    return _json_response([{"Message": "File uploaded successfully.", "FileURL": file_url, "Filename": filename}], 200)
+
+
+# 404 Error Handler inside /api blueprint
+@rest_api.route("/<path:invalid_path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+def missing_resource(invalid_path: str):
+    return _json_response([{"Error": "Not Found"}], 404)
