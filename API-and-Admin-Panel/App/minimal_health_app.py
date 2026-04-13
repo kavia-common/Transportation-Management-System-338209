@@ -50,10 +50,19 @@ def create_minimal_app() -> Flask:
         """Health check endpoint for readiness/liveness probes."""
         return jsonify({"status": "ok"}), 200
 
+    @app.get("/healthz")
+    def healthz() -> tuple[object, int]:
+        """Health check endpoint alias used by some platforms/manifests."""
+        return jsonify({"status": "ok"}), 200
+
     return app
 
 
 app = create_minimal_app()
+
+# Many WSGI/preview runners look for a module-level variable named `application`.
+# Export it as an alias to ensure consistent discovery.
+application = app
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Minimal Flask health server (no DB required).")
